@@ -30,7 +30,7 @@ class Renderer: NSObject, MTKViewDelegate {
     
     let vertexDescriptor: MTLVertexDescriptor
     var mesh: MTKMesh!
-    
+    var accelerationStructure: MTLAccelerationStructure!
     let tex: MTLTexture!
     
     let uniformBuffer: MTLBuffer!
@@ -48,6 +48,39 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let (_, mtkMeshes) = try! MTKMesh.newMeshes(asset: asset, device: device)
         mesh = mtkMeshes[0]
+    }
+    
+    func buildAccelerationStructure() {
+        let submesh = mesh.submeshes[0]
+        
+        let indexElementSize = (submesh.indexType == .uint16) ? MemoryLayout<UInt16>.size : MemoryLayout<UInt32>.size;
+        
+        let triDesc = MTLAccelerationStructureTriangleGeometryDescriptor()
+        triDesc.label = "Triangle Acceleration Structure"
+        triDesc.triangleCount = submesh.indexBuffer.length / indexElementSize / 3
+        triDesc.vertexBuffer = mesh.vertexBuffers[0].buffer
+        triDesc.vertexStride = 8 * MemoryLayout<Float>.size
+        triDesc.vertexFormat = .float3
+        triDesc.indexBuffer = submesh.indexBuffer.buffer
+        triDesc.indexType = submesh.indexType
+        triDesc.indexBufferOffset = submesh.indexBuffer.offset
+        let primDesc = MTLPrimitiveAccelerationStructureDescriptor()
+        primDesc.geometryDescriptors = [triDesc]
+        
+        let size = device.accelerationStructureSizes(descriptor: primDesc)
+        let scratch = device.makeBuffer(length: size.buildScratchBufferSize)!
+        
+        accelerationStructure = device.makeAccelerationStructure(size: size.accelerationStructureSize)
+        accelerationStructure.label = "Acceleration Structure"
+        
+        let commandBuffer = commandQueue.makeCommandBuffer()!
+        
+        let encoder = commandBuffer.makeAccelerationStructureCommandEncoder()!
+        encoder.build(accelerationStructure: accelerationStructure, descriptor: primDesc, scratchBuffer: scratch, scratchBufferOffset: 0)
+        encoder.endEncoding()
+        
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
     }
     
     @MainActor
@@ -110,6 +143,7 @@ class Renderer: NSObject, MTKViewDelegate {
         super.init()
         
         loadMesh()
+        buildAccelerationStructure()
     }
 
     func draw(in view: MTKView) {
@@ -131,6 +165,7 @@ class Renderer: NSObject, MTKViewDelegate {
         renderEncoder.setVertexBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(uniformBuffer, offset: 0, index: 1)
         renderEncoder.setFragmentTexture(tex, index: 0)
+        renderEncoder.setFragmentAccelerationStructure(accelerationStructure, bufferIndex: 1)
         
         let submesh = mesh.submeshes[0]
         renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: submesh.indexCount, indexType: submesh.indexType, indexBuffer: submesh.indexBuffer.buffer, indexBufferOffset: submesh.indexBuffer.offset)

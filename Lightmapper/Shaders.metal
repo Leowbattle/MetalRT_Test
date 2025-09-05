@@ -9,6 +9,7 @@
 
 #include <metal_stdlib>
 using namespace metal;
+using namespace raytracing;
 
 #include <simd/simd.h>
 
@@ -41,7 +42,8 @@ vertex VertexOut vert_main(VertexIn in [[stage_in]],
 }
 
 fragment float4 frag_main(VertexOut in [[stage_in]],
-                          texture2d<float> tex [[texture(0)]]) {
+                          texture2d<float> tex [[texture(0)]],
+                          primitive_acceleration_structure accel [[buffer(1)]]) {
     sampler s(coord::normalized, address::clamp_to_edge, filter::linear);
     float x = tex.sample(s, in.uv).r;
     
