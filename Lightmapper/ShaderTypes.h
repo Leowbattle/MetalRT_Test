@@ -13,8 +13,16 @@
 
 #include <simd/simd.h>
 
+struct Vertex {
+    simd_float3 position;
+    simd_float3 normal;
+    simd_float2 uv;
+};
+
 struct Uniforms {
+    int frameIndex;
     simd_float4x4 viewProj;
+    simd_float4x4 view;
 };
 
 #endif /* ShaderTypes_h */

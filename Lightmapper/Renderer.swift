@@ -25,6 +25,8 @@ class Renderer: NSObject, MTKViewDelegate {
         return Float(size.width / size.height)
     }
     
+    var randomTexture: MTLTexture!
+    
     let library: MTLLibrary!
     let pipeline: MTLRenderPipelineState!
     
@@ -35,11 +37,13 @@ class Renderer: NSObject, MTKViewDelegate {
     
     let uniformBuffer: MTLBuffer!
     
+    var frameIndex: Int32 = 0
+    
     fileprivate func loadMesh() {
         let mdlVertexDescriptor = MTKModelIOVertexDescriptorFromMetal(vertexDescriptor)
         (mdlVertexDescriptor.attributes[0] as! MDLVertexAttribute).name = MDLVertexAttributePosition
-        (mdlVertexDescriptor.attributes[1] as! MDLVertexAttribute).name = MDLVertexAttributeTextureCoordinate
-        (mdlVertexDescriptor.attributes[2] as! MDLVertexAttribute).name = MDLVertexAttributeNormal
+        (mdlVertexDescriptor.attributes[1] as! MDLVertexAttribute).name = MDLVertexAttributeNormal
+        (mdlVertexDescriptor.attributes[2] as! MDLVertexAttribute).name = MDLVertexAttributeTextureCoordinate
         
         let bufferAllocator = MTKMeshBufferAllocator(device: device)
         
@@ -48,6 +52,9 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let (_, mtkMeshes) = try! MTKMesh.newMeshes(asset: asset, device: device)
         mesh = mtkMeshes[0]
+        
+        mesh.vertexBuffers[0].buffer.label = "Vertex Buffer"
+        mesh.submeshes[0].indexBuffer.buffer.label = "Index Buffer"
     }
     
     func buildAccelerationStructure() {
@@ -101,11 +108,11 @@ class Renderer: NSObject, MTKViewDelegate {
         vertexDescriptor.attributes[0].format = .float3
         vertexDescriptor.attributes[0].offset = 0
         
-        vertexDescriptor.attributes[1].format = .float2
+        vertexDescriptor.attributes[1].format = .float3
         vertexDescriptor.attributes[1].offset = 3 * MemoryLayout<Float>.size
         
-        vertexDescriptor.attributes[2].format = .float3
-        vertexDescriptor.attributes[2].offset = 5 * MemoryLayout<Float>.size
+        vertexDescriptor.attributes[2].format = .float2
+        vertexDescriptor.attributes[2].offset = 6 * MemoryLayout<Float>.size
         
         vertexDescriptor.layouts[0].stride = MemoryLayout<Float>.size * 8
         
@@ -146,13 +153,19 @@ class Renderer: NSObject, MTKViewDelegate {
         buildAccelerationStructure()
     }
 
+    var angle: Float = 0.0
     func draw(in view: MTKView) {
         view.clearColor = .init(red: 0.2, green: 0.3, blue: 0.3, alpha: 1.0)
         
+        angle += 90 * .pi / 180 / 60
+        
         var uniforms = Uniforms()
+        uniforms.frameIndex = frameIndex
         let proj = matrix_perspective_right_hand(fovyRadians: 90 * .pi / 180, aspectRatio: aspectRatio, nearZ: 0.1, farZ: 50)
-        let viewMat = matrix4x4_translation(0, -0.5, -1)
+        var viewMat = matrix4x4_translation(0, -0.5, -1)
+        viewMat = viewMat * matrix4x4_rotation(radians: angle, axis: simd_float3(0, 1, 0))
         uniforms.viewProj = proj * viewMat
+        uniforms.view = viewMat
         memcpy(uniformBuffer.contents(), &uniforms, MemoryLayout<Uniforms>.size)
         
         let commandBuffer = commandQueue.makeCommandBuffer()!
@@ -160,24 +173,45 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
         
+        let submesh = mesh.submeshes[0]
+        
         renderEncoder.setRenderPipelineState(pipeline)
+        renderEncoder.setCullMode(.back)
+        renderEncoder.setFrontFacing(.counterClockwise)
         renderEncoder.setDepthStencilState(depthState)
         renderEncoder.setVertexBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 0)
         renderEncoder.setVertexBuffer(uniformBuffer, offset: 0, index: 1)
+        renderEncoder.setVertexBuffer(submesh.indexBuffer.buffer, offset: 0, index: 2)
+        renderEncoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 1)
+        renderEncoder.setFragmentBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 3)
+        renderEncoder.setFragmentBuffer(submesh.indexBuffer.buffer, offset: 0, index: 4)
         renderEncoder.setFragmentTexture(tex, index: 0)
-        renderEncoder.setFragmentAccelerationStructure(accelerationStructure, bufferIndex: 1)
+        renderEncoder.setFragmentTexture(randomTexture, index: 1)
+        renderEncoder.setFragmentAccelerationStructure(accelerationStructure, bufferIndex: 2)
         
-        let submesh = mesh.submeshes[0]
         renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: submesh.indexCount, indexType: submesh.indexType, indexBuffer: submesh.indexBuffer.buffer, indexBufferOffset: submesh.indexBuffer.offset)
         
         renderEncoder.endEncoding()
         
         commandBuffer.present(view.currentDrawable!)
         commandBuffer.commit()
+        
+        frameIndex += 1
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         self.size = size
+        let width = Int(size.width)
+        let height = Int(size.height)
+        
+        let texDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Uint, width: width, height: height, mipmapped: false)
+        texDesc.usage = .shaderRead
+        
+        randomTexture = device.makeTexture(descriptor: texDesc)
+        
+        var randomData: [UInt32] = Array(repeating: 0, count: width * height)
+        fill_random(&randomData, Int32(randomData.count))
+        randomTexture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: randomData, bytesPerRow: width * 4)
     }
 }
 
