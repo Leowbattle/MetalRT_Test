@@ -8,6 +8,8 @@
 // File for Metal kernel and shader functions
 
 #include <metal_stdlib>
+using namespace metal;
+
 #include <simd/simd.h>
 
 #import "ShaderTypes.h"
@@ -20,16 +22,28 @@ struct VertexIn {
 
 struct VertexOut {
     float4 position [[position]];
-    float3 normal;
+    float2 uv;
 };
 
-vertex VertexOut vert_main(VertexIn in [[stage_in]]) {
+vertex VertexOut vert_main_flat(VertexIn in [[stage_in]]) {
     VertexOut out;
     out.position = float4(in.uv * 2 - 1, 0, 1);
-    out.normal = in.normal / 2 + 0.5;
+//    out.colour = float3(in.uv, 0);
     return out;
 }
 
-fragment float4 frag_main(VertexOut in [[stage_in]]) {
-    return float4(in.normal, 1);
+vertex VertexOut vert_main(VertexIn in [[stage_in]],
+                           constant Uniforms& u [[buffer(1)]]) {
+    VertexOut out;
+    out.position = u.viewProj * float4(in.position, 1);
+    out.uv = in.uv;
+    return out;
+}
+
+fragment float4 frag_main(VertexOut in [[stage_in]],
+                          texture2d<float> tex [[texture(0)]]) {
+    sampler s(coord::normalized, address::clamp_to_edge, filter::linear);
+    float x = tex.sample(s, in.uv).r;
+    
+    return float4(x, 0, 0, 1);
 }

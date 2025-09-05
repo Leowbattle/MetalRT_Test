@@ -17,11 +17,23 @@ class Renderer: NSObject, MTKViewDelegate {
     public let device: MTLDevice
     let commandQueue: MTLCommandQueue
     
+    let depthState: MTLDepthStencilState
+    
+    var size: CGSize = CGSize()
+    
+    var aspectRatio: Float {
+        return Float(size.width / size.height)
+    }
+    
     let library: MTLLibrary!
     let pipeline: MTLRenderPipelineState!
     
     let vertexDescriptor: MTLVertexDescriptor
     var mesh: MTKMesh!
+    
+    let tex: MTLTexture!
+    
+    let uniformBuffer: MTLBuffer!
     
     fileprivate func loadMesh() {
         let mdlVertexDescriptor = MTKModelIOVertexDescriptorFromMetal(vertexDescriptor)
@@ -43,6 +55,13 @@ class Renderer: NSObject, MTKViewDelegate {
         self.device = metalKitView.device!
         self.commandQueue = self.device.makeCommandQueue()!
         
+        metalKitView.depthStencilPixelFormat = MTLPixelFormat.depth32Float
+        
+        let depthStateDescriptor = MTLDepthStencilDescriptor()
+        depthStateDescriptor.depthCompareFunction = MTLCompareFunction.less
+        depthStateDescriptor.isDepthWriteEnabled = true
+        self.depthState = device.makeDepthStencilState(descriptor:depthStateDescriptor)!
+        
         library = device.makeDefaultLibrary()!
         
         vertexDescriptor = MTLVertexDescriptor()
@@ -59,11 +78,34 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let desc = MTLRenderPipelineDescriptor()
         desc.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
+        desc.depthAttachmentPixelFormat = metalKitView.depthStencilPixelFormat
         desc.vertexDescriptor = vertexDescriptor
         desc.vertexFunction = library.makeFunction(name: "vert_main")
         desc.fragmentFunction = library.makeFunction(name: "frag_main")
         
         pipeline = try! device.makeRenderPipelineState(descriptor: desc)
+        
+        uniformBuffer = device.makeBuffer(length: MemoryLayout<Uniforms>.size, options: .cpuCacheModeWriteCombined)!
+        
+        let texSize = 1024
+        
+        let texDesc = MTLTextureDescriptor()
+        texDesc.width = texSize
+        texDesc.height = texSize
+        texDesc.pixelFormat = .r8Unorm
+        texDesc.usage = .renderTarget.union(.shaderRead)
+        texDesc.storageMode = .shared
+        texDesc.textureType = .type2D
+        tex = device.makeTexture(descriptor: texDesc)!
+        
+        var texData: [UInt8] = Array(repeating: 0, count: texSize * texSize)
+        for i in 0..<texSize {
+            for j in 0..<texSize {
+                texData[i * texSize + j] = UInt8(truncatingIfNeeded: i ^ j)
+            }
+        }
+        
+        tex.replace(region: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: texSize, height: texSize, depth: 1)), mipmapLevel: 0, withBytes: texData, bytesPerRow: texSize)
         
         super.init()
         
@@ -73,13 +115,22 @@ class Renderer: NSObject, MTKViewDelegate {
     func draw(in view: MTKView) {
         view.clearColor = .init(red: 0.2, green: 0.3, blue: 0.3, alpha: 1.0)
         
+        var uniforms = Uniforms()
+        let proj = matrix_perspective_right_hand(fovyRadians: 90 * .pi / 180, aspectRatio: aspectRatio, nearZ: 0.1, farZ: 50)
+        let viewMat = matrix4x4_translation(0, -0.5, -1)
+        uniforms.viewProj = proj * viewMat
+        memcpy(uniformBuffer.contents(), &uniforms, MemoryLayout<Uniforms>.size)
+        
         let commandBuffer = commandQueue.makeCommandBuffer()!
         guard let renderPassDescriptor = view.currentRenderPassDescriptor else { return }
         
         let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
         
         renderEncoder.setRenderPipelineState(pipeline)
+        renderEncoder.setDepthStencilState(depthState)
         renderEncoder.setVertexBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 0)
+        renderEncoder.setVertexBuffer(uniformBuffer, offset: 0, index: 1)
+        renderEncoder.setFragmentTexture(tex, index: 0)
         
         let submesh = mesh.submeshes[0]
         renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: submesh.indexCount, indexType: submesh.indexType, indexBuffer: submesh.indexBuffer.buffer, indexBufferOffset: submesh.indexBuffer.offset)
@@ -91,7 +142,7 @@ class Renderer: NSObject, MTKViewDelegate {
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        
+        self.size = size
     }
 }
 

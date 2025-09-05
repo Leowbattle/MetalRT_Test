@@ -11,5 +11,11 @@
 #ifndef ShaderTypes_h
 #define ShaderTypes_h
 
+#include <simd/simd.h>
+
+struct Uniforms {
+    simd_float4x4 viewProj;
+};
+
 #endif /* ShaderTypes_h */
 
