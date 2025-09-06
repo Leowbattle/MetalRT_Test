@@ -49,7 +49,7 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let bufferAllocator = MTKMeshBufferAllocator(device: device)
         
-        let modelURL = Bundle.main.url(forResource: "Duck.obj", withExtension: nil)
+        let modelURL = Bundle.main.url(forResource: "Bunny.obj", withExtension: nil)
         let asset = MDLAsset(url: modelURL, vertexDescriptor: mdlVertexDescriptor, bufferAllocator: bufferAllocator)
         
         let (_, mtkMeshes) = try! MTKMesh.newMeshes(asset: asset, device: device)
@@ -96,7 +96,6 @@ class Renderer: NSObject, MTKViewDelegate {
     init?(metalKitView: MTKView) {
         self.device = metalKitView.device!
         self.commandQueue = self.device.makeCommandQueue()!
-        
         metalKitView.depthStencilPixelFormat = MTLPixelFormat.depth32Float
         
         let depthStateDescriptor = MTLDepthStencilDescriptor()

@@ -8,6 +8,7 @@
 import Foundation
 import Metal
 import MetalKit
+import MetalPerformanceShaders
 
 // This class renders light maps on a background thread
 class AsyncLightmapRenderer: Thread {
@@ -27,6 +28,9 @@ class AsyncLightmapRenderer: Thread {
     
     let mesh: MTKMesh
     let accelerationStructure: MTLAccelerationStructure
+    
+    // Metal does not support conservative rasterisation, so we use a dilation filter
+    let dilateFilter: MPSUnaryImageKernel
     
     init(device: MTLDevice, commandQueue: MTLCommandQueue, size: Int, mesh: MTKMesh, accel: MTLAccelerationStructure) {
         self.device = device
@@ -71,7 +75,7 @@ class AsyncLightmapRenderer: Thread {
         tex[0].label = "Lightmap Texture 0"
         tex[1].label = "Lightmap Texture 1"
         
-        desc.usage = .shaderRead
+        desc.usage = [.shaderWrite, .shaderRead]
         copyingTexture = device.makeTexture(descriptor: desc)!
         copyingTexture.label = "Lightmap Copying Texture"
         
@@ -79,11 +83,20 @@ class AsyncLightmapRenderer: Thread {
         
         self.mesh = mesh
         self.accelerationStructure = accel
+        
+        dilateFilter = MPSImageAreaMax(device: device, kernelWidth: 3, kernelHeight: 3)
+//        let t: Float = 0.1
+//        let kernel: [Float] = [
+//            t, t, t,
+//            t, 0, t,
+//            t, t, t
+//        ];
+//        dilateFilter = MPSImageDilate(device: device, kernelWidth: 3, kernelHeight: 3, values: kernel)
     }
     
     override func main() {
         var samples = 0
-        while true {
+        while samples < 200 {
             let commandBuffer = commandQueue.makeCommandBuffer()!
             
             let renderPassDesc = MTLRenderPassDescriptor()
@@ -115,9 +128,7 @@ class AsyncLightmapRenderer: Thread {
             
             encoder.endEncoding()
             
-            let blitEncoder = commandBuffer.makeBlitCommandEncoder()!
-            blitEncoder.copy(from: tex[0], to: copyingTexture)
-            blitEncoder.endEncoding()
+            dilateFilter.encode(commandBuffer: commandBuffer, sourceTexture: tex[0], destinationTexture: copyingTexture)
             
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
@@ -126,7 +137,7 @@ class AsyncLightmapRenderer: Thread {
             samples += 1
             
             tex.swapAt(0, 1)
-//            Thread.sleep(forTimeInterval: 1)
+//            Thread.sleep(forTimeInterval: 0.1)
         }
     }
 }

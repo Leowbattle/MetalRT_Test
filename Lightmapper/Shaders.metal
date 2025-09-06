@@ -35,7 +35,7 @@ float halton(unsigned int i, unsigned int d) {
 
     float f = 1.0f;
     float invB = 1.0f / b;
-
+    
     float r = 0;
 
     while (i > 0) {
@@ -191,5 +191,7 @@ fragment float4 frag_main(VertexOut in [[stage_in]],
                           constant Uniforms& u [[buffer(1)]],
                           texture2d<float> tex [[texture(0)]]) {
     sampler s(filter::linear);
-    return tex.sample(s, in.uv);
+    float ao = tex.sample(s, in.uv).r;
+//    return float4(1);
+    return float4(ao, ao, ao, 1);
 }
