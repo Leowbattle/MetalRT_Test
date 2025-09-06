@@ -25,7 +25,7 @@ class Renderer: NSObject, MTKViewDelegate {
         return Float(size.width / size.height)
     }
     
-    var randomTexture: MTLTexture!
+    var randomTexture: RandomTexture!
     
     let library: MTLLibrary!
     let pipeline: MTLRenderPipelineState!
@@ -38,6 +38,8 @@ class Renderer: NSObject, MTKViewDelegate {
     let uniformBuffer: MTLBuffer!
     
     var frameIndex: Int32 = 0
+    
+    var lightmapRenderer: AsyncLightmapRenderer! = nil
     
     fileprivate func loadMesh() {
         let mdlVertexDescriptor = MTKModelIOVertexDescriptorFromMetal(vertexDescriptor)
@@ -151,6 +153,9 @@ class Renderer: NSObject, MTKViewDelegate {
         
         loadMesh()
         buildAccelerationStructure()
+        
+        lightmapRenderer = AsyncLightmapRenderer(device: device, commandQueue: commandQueue, size: 1024, mesh: mesh, accel: accelerationStructure)
+        lightmapRenderer.start()
     }
 
     var angle: Float = 0.0
@@ -180,14 +185,10 @@ class Renderer: NSObject, MTKViewDelegate {
         renderEncoder.setFrontFacing(.counterClockwise)
         renderEncoder.setDepthStencilState(depthState)
         renderEncoder.setVertexBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 0)
-        renderEncoder.setVertexBuffer(uniformBuffer, offset: 0, index: 1)
         renderEncoder.setVertexBuffer(submesh.indexBuffer.buffer, offset: 0, index: 2)
+        renderEncoder.setVertexBuffer(uniformBuffer, offset: 0, index: 1)
         renderEncoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 1)
-        renderEncoder.setFragmentBuffer(mesh.vertexBuffers[0].buffer, offset: 0, index: 3)
-        renderEncoder.setFragmentBuffer(submesh.indexBuffer.buffer, offset: 0, index: 4)
-        renderEncoder.setFragmentTexture(tex, index: 0)
-        renderEncoder.setFragmentTexture(randomTexture, index: 1)
-        renderEncoder.setFragmentAccelerationStructure(accelerationStructure, bufferIndex: 2)
+        renderEncoder.setFragmentTexture(lightmapRenderer.copyingTexture, index: 0)
         
         renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: submesh.indexCount, indexType: submesh.indexType, indexBuffer: submesh.indexBuffer.buffer, indexBufferOffset: submesh.indexBuffer.offset)
         
@@ -204,14 +205,7 @@ class Renderer: NSObject, MTKViewDelegate {
         let width = Int(size.width)
         let height = Int(size.height)
         
-        let texDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Uint, width: width, height: height, mipmapped: false)
-        texDesc.usage = .shaderRead
-        
-        randomTexture = device.makeTexture(descriptor: texDesc)
-        
-        var randomData: [UInt32] = Array(repeating: 0, count: width * height)
-        fill_random(&randomData, Int32(randomData.count))
-        randomTexture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: randomData, bytesPerRow: width * 4)
+        randomTexture = RandomTexture(device: device, width: width, height: height)!
     }
 }
 

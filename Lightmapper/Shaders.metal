@@ -94,12 +94,88 @@ struct VertexOut {
     float2 uv;
 };
 
-//vertex VertexOut vert_main_flat(VertexIn in [[stage_in]]) {
-//    VertexOut out;
-//    out.position = float4(in.uv * 2 - 1, 0, 1);
-////    out.colour = float3(in.uv, 0);
-//    return out;
-//}
+vertex VertexOut lightmap_vertex(VertexIn in [[stage_in]],
+                                 constant Uniforms& u [[buffer(1)]]) {
+    VertexOut out;
+    in.uv.y = 1 - in.uv.y;
+    out.position = float4(in.uv * 2 - 1, 0, 1);
+    out.worldPos = in.position;
+    out.normal = in.normal;
+    out.uv = in.uv;
+    return out;
+}
+
+fragment float4 lightmap_fragment(VertexOut in [[stage_in]],
+                              constant Uniforms& u [[buffer(1)]],
+                              texture2d<unsigned int> randomTex [[texture(0)]],
+                              texture2d<float> prev [[texture(1)]],
+                              primitive_acceleration_structure accel [[buffer(2)]],
+                              constant Vertex* vertices [[buffer(3)]],
+                              constant uint* indices [[buffer(4)]]) {
+    uint2 xy = uint2(in.position.xy);
+    unsigned int offset = randomTex.read(xy).x;
+    
+    float2 rand = float2(halton(offset + u.frameIndex, 0),
+               halton(offset + u.frameIndex, 1));
+    
+    float3 worldSpaceSampleDirection = sampleCosineWeightedHemisphere(rand);
+    worldSpaceSampleDirection = alignHemisphereWithNormal(worldSpaceSampleDirection, in.normal);
+    
+    ray r;
+    r.origin = in.worldPos;
+    r.direction = worldSpaceSampleDirection;
+    r.min_distance = 0.00001;
+    r.max_distance = 100;
+    
+    intersector<triangle_data> inter;
+    inter.assume_geometry_type(geometry_type::triangle);
+    inter.set_triangle_cull_mode(triangle_cull_mode::back);
+    
+    int maxBounces = 3;
+    float colour = 1;
+    int bounce;
+    for (bounce = 0; bounce < maxBounces; bounce++) {
+        auto intersection = inter.intersect(r, accel);
+        if (intersection.type == intersection_type::triangle) {
+            colour *= 0.5;
+            
+            float3 p = r.origin + intersection.distance * r.direction;
+            
+            int prim = intersection.primitive_id;
+            
+            float3 n0 = vertices[indices[prim * 3 + 0]].normal;
+            float3 n1 = vertices[indices[prim * 3 + 1]].normal;
+            float3 n2 = vertices[indices[prim * 3 + 2]].normal;
+            float2 uv = intersection.triangle_barycentric_coord;
+            float3 n = (1.0f - uv.x - uv.y) * n0 + uv.x * n1 + uv.y * n2;
+            
+            rand = float2(halton(offset + u.frameIndex, 2 + bounce * 5 + 1),
+                          halton(offset + u.frameIndex, 2 + bounce * 5 + 2));
+            
+            worldSpaceSampleDirection = sampleCosineWeightedHemisphere(rand);
+            worldSpaceSampleDirection = alignHemisphereWithNormal(worldSpaceSampleDirection, in.normal);
+            
+            r.origin = p;
+            r.direction = worldSpaceSampleDirection;
+        }
+        else {
+            break;
+        }
+    }
+    if (bounce == maxBounces) {
+        colour = 0;
+    }
+    
+    if (u.frameIndex > 0) {
+        float prevColour = prev.read(xy).x;
+        prevColour *= u.frameIndex;
+
+        colour += prevColour;
+        colour /= (u.frameIndex + 1);
+    }
+
+    return float4(colour, colour, colour, 1);
+}
 
 vertex VertexOut vert_main(VertexIn in [[stage_in]],
                            constant Uniforms& u [[buffer(1)]]) {
@@ -113,61 +189,7 @@ vertex VertexOut vert_main(VertexIn in [[stage_in]],
 
 fragment float4 frag_main(VertexOut in [[stage_in]],
                           constant Uniforms& u [[buffer(1)]],
-                          texture2d<float> tex [[texture(0)]],
-                          primitive_acceleration_structure accel [[buffer(2)]],
-                          constant Vertex* vertices [[buffer(3)]],
-                          constant uint* indices [[buffer(4)]],
-                          texture2d<unsigned int> randomTex [[texture(1)]]) {
-//    sampler s(coord::normalized, address::clamp_to_edge, filter::linear);
-//    float x = tex.sample(s, in.uv).r;
-    
-    uint2 xy = uint2(in.position.xy);
-    unsigned int offset = randomTex.read(xy).x;
-    
-    float2 rand = float2(halton(offset + u.frameIndex, 0),
-               halton(offset + u.frameIndex, 1));
-    
-    float3 worldSpaceSampleDirection = sampleCosineWeightedHemisphere(rand);
-    worldSpaceSampleDirection = alignHemisphereWithNormal(worldSpaceSampleDirection, in.normal);
-    
-    ray r;
-    r.origin = in.worldPos;
-    r.direction = worldSpaceSampleDirection;
-    r.min_distance = 0.01;
-    r.max_distance = 100;
-    
-    intersector<triangle_data> inter;
-    inter.assume_geometry_type(geometry_type::triangle);
-    inter.set_triangle_cull_mode(triangle_cull_mode::back);
-    
-    int maxBounces = 3;
-    float colour = 1;
-    int bounce;
-    for (bounce = 0; bounce < maxBounces; bounce++) {
-        auto intersection = inter.intersect(r, accel);
-        if (intersection.type == intersection_type::triangle) {
-            colour *= 0.8;
-            
-            float3 p = r.origin + intersection.distance * r.direction;
-            
-            int prim = intersection.primitive_id;
-            
-            float3 n0 = vertices[indices[prim * 3 + 0]].normal;
-            float3 n1 = vertices[indices[prim * 3 + 1]].normal;
-            float3 n2 = vertices[indices[prim * 3 + 2]].normal;
-            float2 uv = intersection.triangle_barycentric_coord;
-            float3 n = (1.0f - uv.x - uv.y) * n0 + uv.x * n1 + uv.y * n2;
-            
-            r.origin = p;
-            r.direction = n;
-        }
-        else {
-            break;
-        }
-    }
-    if (bounce == maxBounces) {
-        colour = 0;
-    }
-//    return float4(in.normal, 1);
-    return float4(colour, colour, colour, 1);
+                          texture2d<float> tex [[texture(0)]]) {
+    sampler s(filter::linear);
+    return tex.sample(s, in.uv);
 }
