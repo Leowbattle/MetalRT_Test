@@ -13,7 +13,8 @@ import ModelIO
 import simd
 
 class Renderer: NSObject, MTKViewDelegate {
-
+    public var delegate: RendererDelegate?
+    
     public let device: MTLDevice
     let commandQueue: MTLCommandQueue
     
@@ -24,8 +25,6 @@ class Renderer: NSObject, MTKViewDelegate {
     var aspectRatio: Float {
         return Float(size.width / size.height)
     }
-    
-    var randomTexture: RandomTexture!
     
     let library: MTLLibrary!
     let pipeline: MTLRenderPipelineState!
@@ -39,6 +38,8 @@ class Renderer: NSObject, MTKViewDelegate {
     var frameIndex: Int32 = 0
     
     var lightmapRenderer: AsyncLightmapRenderer! = nil
+    
+    public var viewMatrix = simd_float4x4(1)
     
     fileprivate func loadMesh() {
         let mdlVertexDescriptor = MTKModelIOVertexDescriptorFromMetal(vertexDescriptor)
@@ -140,17 +141,19 @@ class Renderer: NSObject, MTKViewDelegate {
 
     var angle: Float = 0.0
     func draw(in view: MTKView) {
+        delegate?.frameWillRender(renderer: self)
+        
         view.clearColor = .init(red: 0.2, green: 0.3, blue: 0.3, alpha: 1.0)
         
         angle += 90 * .pi / 180 / 60
         
         var uniforms = Uniforms()
         uniforms.frameIndex = frameIndex
-        let proj = matrix_perspective_right_hand(fovyRadians: 90 * .pi / 180, aspectRatio: aspectRatio, nearZ: 0.1, farZ: 50)
-        var viewMat = matrix4x4_translation(0, -0.5, -1)
-        viewMat = viewMat * matrix4x4_rotation(radians: angle, axis: simd_float3(0, 1, 0))
-        uniforms.viewProj = proj * viewMat
-        uniforms.view = viewMat
+        let proj = matrix_perspective_right_hand(fovyRadians: 90 * .pi / 180, aspectRatio: aspectRatio, nearZ: 0.01, farZ: 50)
+//        viewMatrix = matrix4x4_translation(0, -0.5, -1)
+//        viewMatrix = viewMatrix * matrix4x4_rotation(radians: angle, axis: simd_float3(0, 1, 0))
+        uniforms.viewProj = proj * viewMatrix
+        uniforms.view = viewMatrix
         memcpy(uniformBuffer.contents(), &uniforms, MemoryLayout<Uniforms>.size)
         
         let commandBuffer = commandQueue.makeCommandBuffer()!
@@ -178,15 +181,18 @@ class Renderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
         
         frameIndex += 1
+        
+        delegate?.frameRendered(renderer: self)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         self.size = size
-        let width = Int(size.width)
-        let height = Int(size.height)
-        
-        randomTexture = RandomTexture(device: device, width: width, height: height)!
     }
+}
+
+protocol RendererDelegate {
+    func frameWillRender(renderer: Renderer)
+    func frameRendered(renderer: Renderer)
 }
 
 // Generic matrix math utility functions
