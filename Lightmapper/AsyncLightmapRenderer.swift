@@ -96,6 +96,7 @@ class AsyncLightmapRenderer: Thread {
     
     override func main() {
         var samples = 0
+        let startTime = Date.now
         while samples < 500 {
             let commandBuffer = commandQueue.makeCommandBuffer()!
             
@@ -139,5 +140,7 @@ class AsyncLightmapRenderer: Thread {
             tex.swapAt(0, 1)
 //            Thread.sleep(forTimeInterval: 0.1)
         }
+        let elapsed = Date.now.timeIntervalSince(startTime)
+        print("\(samples) samples in \((elapsed * 1000).rounded() / 1000)s")
     }
 }

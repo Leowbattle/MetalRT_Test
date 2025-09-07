@@ -33,7 +33,6 @@ class Renderer: NSObject, MTKViewDelegate {
     let vertexDescriptor: MTLVertexDescriptor
     var mesh: MTKMesh!
     var accelerationStructure: MTLAccelerationStructure!
-    let tex: MTLTexture!
     
     let uniformBuffer: MTLBuffer!
     
@@ -94,6 +93,8 @@ class Renderer: NSObject, MTKViewDelegate {
     
     @MainActor
     init?(metalKitView: MTKView) {
+        metalKitView.colorPixelFormat = .rgba8Unorm_srgb
+        
         self.device = metalKitView.device!
         self.commandQueue = self.device.makeCommandQueue()!
         metalKitView.depthStencilPixelFormat = MTLPixelFormat.depth32Float
@@ -127,26 +128,6 @@ class Renderer: NSObject, MTKViewDelegate {
         pipeline = try! device.makeRenderPipelineState(descriptor: desc)
         
         uniformBuffer = device.makeBuffer(length: MemoryLayout<Uniforms>.size, options: .cpuCacheModeWriteCombined)!
-        
-        let texSize = 1024
-        
-        let texDesc = MTLTextureDescriptor()
-        texDesc.width = texSize
-        texDesc.height = texSize
-        texDesc.pixelFormat = .r8Unorm
-        texDesc.usage = .renderTarget.union(.shaderRead)
-        texDesc.storageMode = .shared
-        texDesc.textureType = .type2D
-        tex = device.makeTexture(descriptor: texDesc)!
-        
-        var texData: [UInt8] = Array(repeating: 0, count: texSize * texSize)
-        for i in 0..<texSize {
-            for j in 0..<texSize {
-                texData[i * texSize + j] = UInt8(truncatingIfNeeded: i ^ j)
-            }
-        }
-        
-        tex.replace(region: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: texSize, height: texSize, depth: 1)), mipmapLevel: 0, withBytes: texData, bytesPerRow: texSize)
         
         super.init()
         

@@ -27,7 +27,7 @@ class GameViewController: NSViewController {
             print("Metal is not supported on this device")
             return
         }
-
+        
         mtkView.device = defaultDevice
 
         guard let newRenderer = Renderer(metalKitView: mtkView) else {
