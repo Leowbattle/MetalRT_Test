@@ -22,7 +22,7 @@ class AsyncLightmapRenderer: Thread {
     let uniformBuffer: MTLBuffer
     
     var tex: [MTLTexture]
-    let copyingTexture: MTLTexture
+    var copyingTexture: MTLTexture
     
     let randomTex: RandomTexture
     
@@ -65,7 +65,7 @@ class AsyncLightmapRenderer: Thread {
         desc.pixelFormat = .r32Float
         desc.usage = [.renderTarget, .shaderRead]
         desc.textureType = .type2D
-        desc.storageMode = .private
+        desc.storageMode = .shared
         
         tex = [
             device.makeTexture(descriptor: desc)!,
@@ -97,7 +97,7 @@ class AsyncLightmapRenderer: Thread {
     override func main() {
         var samples = 0
         let startTime = Date.now
-        while samples < 500 {
+        while samples < 1000 {
             let commandBuffer = commandQueue.makeCommandBuffer()!
             
             let renderPassDesc = MTLRenderPassDescriptor()
@@ -134,6 +134,16 @@ class AsyncLightmapRenderer: Thread {
             commandBuffer.commit()
             commandBuffer.waitUntilCompleted()
             
+            let size = copyingTexture.width
+            var buffer0: [Float] = Array(repeating: 0, count: size * size)
+            tex[0].getBytes(&buffer0, bytesPerRow: size * 4, bytesPerImage: size * size * 4, from: MTLRegionMake2D(0, 0, size, size), mipmapLevel: 0, slice: 0)
+            var buffer1: [Float] = Array(repeating: 0, count: size * size)
+            tex[1].getBytes(&buffer1, bytesPerRow: size * 4, bytesPerImage: size * size * 4, from: MTLRegionMake2D(0, 0, size, size), mipmapLevel: 0, slice: 0)
+            
+//            let e = mse(buffer0, buffer1)
+//            let e = 0
+            
+//            print(e)
             print("Completed \(samples) samples")
             samples += 1
             
@@ -143,4 +153,13 @@ class AsyncLightmapRenderer: Thread {
         let elapsed = Date.now.timeIntervalSince(startTime)
         print("\(samples) samples in \((elapsed * 1000).rounded() / 1000)s")
     }
+}
+
+func mse(_ a: [Float], _ b: [Float]) -> Float {
+    var s: Float = 0
+    for i in 0..<a.count {
+        let d = a[i] - b[i]
+        s += d * d
+    }
+    return s / Float(a.count)
 }
