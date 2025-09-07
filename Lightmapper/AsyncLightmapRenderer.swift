@@ -96,7 +96,7 @@ class AsyncLightmapRenderer: Thread {
     
     override func main() {
         var samples = 0
-        while samples < 200 {
+        while samples < 500 {
             let commandBuffer = commandQueue.makeCommandBuffer()!
             
             let renderPassDesc = MTLRenderPassDescriptor()

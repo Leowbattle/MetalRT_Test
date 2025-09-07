@@ -41,4 +41,9 @@ class GameViewController: NSViewController {
 
         mtkView.delegate = renderer
     }
+    
+    override func magnify(with event: NSEvent) {
+        print(event.phase)
+        print(event.magnification)
+    }
 }

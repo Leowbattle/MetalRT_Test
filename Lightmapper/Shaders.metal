@@ -131,39 +131,12 @@ fragment float4 lightmap_fragment(VertexOut in [[stage_in]],
     inter.assume_geometry_type(geometry_type::triangle);
     inter.set_triangle_cull_mode(triangle_cull_mode::back);
     
-    int maxBounces = 3;
-    float colour = 1;
-    int bounce;
-    for (bounce = 0; bounce < maxBounces; bounce++) {
-        auto intersection = inter.intersect(r, accel);
-        if (intersection.type == intersection_type::triangle) {
-            colour *= 0.5;
-            
-            float3 p = r.origin + intersection.distance * r.direction;
-            
-            int prim = intersection.primitive_id;
-            
-            float3 n0 = vertices[indices[prim * 3 + 0]].normal;
-            float3 n1 = vertices[indices[prim * 3 + 1]].normal;
-            float3 n2 = vertices[indices[prim * 3 + 2]].normal;
-            float2 uv = intersection.triangle_barycentric_coord;
-            float3 n = (1.0f - uv.x - uv.y) * n0 + uv.x * n1 + uv.y * n2;
-            
-            rand = float2(halton(offset + u.frameIndex, 2 + bounce * 5 + 1),
-                          halton(offset + u.frameIndex, 2 + bounce * 5 + 2));
-            
-            worldSpaceSampleDirection = sampleCosineWeightedHemisphere(rand);
-            worldSpaceSampleDirection = alignHemisphereWithNormal(worldSpaceSampleDirection, in.normal);
-            
-            r.origin = p;
-            r.direction = worldSpaceSampleDirection;
-        }
-        else {
-            break;
-        }
-    }
-    if (bounce == maxBounces) {
+    float colour;
+    auto intersection = inter.intersect(r, accel);
+    if (intersection.type == intersection_type::triangle) {
         colour = 0;
+    } else {
+        colour = 1;
     }
     
     if (u.frameIndex > 0) {

@@ -49,7 +49,7 @@ class Renderer: NSObject, MTKViewDelegate {
         
         let bufferAllocator = MTKMeshBufferAllocator(device: device)
         
-        let modelURL = Bundle.main.url(forResource: "Bunny.obj", withExtension: nil)
+        let modelURL = Bundle.main.url(forResource: "Dragon.obj", withExtension: nil)
         let asset = MDLAsset(url: modelURL, vertexDescriptor: mdlVertexDescriptor, bufferAllocator: bufferAllocator)
         
         let (_, mtkMeshes) = try! MTKMesh.newMeshes(asset: asset, device: device)
